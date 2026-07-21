@@ -1,12 +1,36 @@
 import { useState, useEffect, useRef } from "react";
+import { initializeApp } from "firebase/app";
+import {
+  getFirestore,
+  collection,
+  addDoc,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+} from "firebase/firestore";
 
 const UPLOAD_PASSWORD = "board2026";
 const CLOUD_NAME = "inprxaf1";
 const UPLOAD_PRESET = "ml_default";
-const STORAGE_KEY = "cbe_posts_v3";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD3UVYfH1vEAW-NNcrLp127jdZExAoIv3w",
+  authDomain: "bosques-board.firebaseapp.com",
+  projectId: "bosques-board",
+  storageBucket: "bosques-board.firebasestorage.app",
+  messagingSenderId: "703454918034",
+  appId: "1:703454918034:web:6c360b3c5eed1017ed3d4b",
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+const postsCol = collection(db, "posts");
 
 const CATEGORIES = [
   "Presidentes y Lectores",
+  "Conferencias",
   "Acomodadores y Micrófonos",
   "Vida y Ministerio",
   "Limpieza",
@@ -36,7 +60,9 @@ const STYLES = `
   }
 
   body {
-    background: var(--bg);
+    background:
+      linear-gradient(rgba(250,248,245,0.9), rgba(250,248,245,0.9)),
+      url('https://res.cloudinary.com/inprxaf1/image/upload/v1784610732/bosques_board_background.jpg') center/cover fixed no-repeat;
     color: var(--text);
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
@@ -295,7 +321,7 @@ const STYLES = `
   .doc-thumb {
     width: 100%;
     aspect-ratio: 3/4;
-    object-fit: cover;
+    object-fit: contain;
     display: block;
     background: var(--bg2);
   }
@@ -541,16 +567,43 @@ async function uploadToCloudinary(file, onProgress) {
   });
 }
 
-// ── localStorage helpers ─────────────────────────────
-function loadPosts() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch { return []; }
+// Uploads the PDF a second time through the image pipeline so Cloudinary can
+// render a first-page thumbnail. Best-effort: the grid falls back to the
+// generic PDF icon if this fails or the account can't deliver PDF-as-image.
+async function uploadPdfThumbSource(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", UPLOAD_PRESET);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) throw new Error("thumb upload failed");
+  const data = await res.json();
+  return data.secure_url
+    .replace("/upload/", "/upload/pg_1,f_jpg,q_auto,w_500/")
+    .replace(/\.pdf$/i, ".jpg");
 }
 
-function savePosts(posts) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(posts));
+// ── PDF grid thumbnail (falls back to icon on load failure) ─────────
+function PdfThumb({ thumb }) {
+  const [failed, setFailed] = useState(false);
+  if (!thumb || failed) {
+    return (
+      <div className="doc-pdf-thumb">
+        <span className="pdf-icon">📄</span>
+        <span className="pdf-label">PDF</span>
+      </div>
+    );
+  }
+  return (
+    <img
+      className="doc-thumb"
+      src={thumb}
+      alt="PDF"
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 // ── Viewer ───────────────────────────────────────────
@@ -622,7 +675,7 @@ export default function App() {
   const [pw, setPw]                 = useState("");
   const [pwError, setPwError]       = useState("");
   const [activeTab, setActiveTab]   = useState(CATEGORIES[0]);
-  const [posts, setPosts]           = useState(loadPosts);
+  const [posts, setPosts]           = useState([]);
   const [viewing, setViewing]       = useState(null);
 
   const [category, setCategory]     = useState(CATEGORIES[0]);
@@ -636,10 +689,13 @@ export default function App() {
   const [statusMsg, setStatusMsg]   = useState("");
   const fileRef                     = useRef();
 
-  function persistPosts(updated) {
-    savePosts(updated);
-    setPosts(updated);
-  }
+  useEffect(() => {
+    const q = query(postsCol, orderBy("date", "desc"));
+    const unsub = onSnapshot(q, snap => {
+      setPosts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return unsub;
+  }, []);
 
   function verify() {
     if (pw === UPLOAD_PASSWORD) { setIsAdmin(true); setPwError(""); }
@@ -669,15 +725,18 @@ export default function App() {
     setProgress(0);
     try {
       const url = await uploadToCloudinary(file, setProgress);
-      const newPost = {
-        id: Date.now().toString(),
+      let thumb = null;
+      if (fileType === "pdf") {
+        try { thumb = await uploadPdfThumbSource(file); } catch { /* fall back to icon */ }
+      }
+      await addDoc(postsCol, {
         src: url,
         type: fileType,
         category,
         caption: caption.trim(),
         date: Date.now(),
-      };
-      persistPosts([newPost, ...posts]);
+        ...(thumb ? { thumb } : {}),
+      });
       setFile(null); setFilePreview(null); setFileType(null); setCaption("");
       setStatusMsg("Publicado correctamente.");
       setTimeout(() => setStatusMsg(""), 3000);
@@ -689,7 +748,7 @@ export default function App() {
   }
 
   function handleDelete(id) {
-    persistPosts(posts.filter(p => p.id !== id));
+    deleteDoc(doc(db, "posts", id)).catch(() => {});
   }
 
   const filtered = posts.filter(p => p.category === activeTab);
@@ -828,10 +887,7 @@ export default function App() {
                 <div className="doc-card" key={doc.id} onClick={() => setViewing(doc)}>
                   {doc.type === "image"
                     ? <img className="doc-thumb" src={doc.src} alt={doc.caption || doc.category} />
-                    : <div className="doc-pdf-thumb">
-                        <span className="pdf-icon">📄</span>
-                        <span className="pdf-label">PDF</span>
-                      </div>
+                    : <PdfThumb thumb={doc.thumb} />
                   }
                   <div className="doc-meta">
                     {doc.caption && <div className="doc-caption">{doc.caption}</div>}
