@@ -253,18 +253,14 @@ const STYLES = `
   .main { flex: 1; padding: 32px 24px; max-width: 900px; margin: 0 auto; width: 100%; }
 
   .tabs-wrap {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
     margin-bottom: 28px;
-    scrollbar-width: none;
   }
-  .tabs-wrap::-webkit-scrollbar { display: none; }
 
   .tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     padding-bottom: 2px;
-    min-width: max-content;
   }
 
   .tab {
@@ -523,6 +519,16 @@ const STYLES = `
     .topbar-title { font-size: 0.92rem; }
     .main { padding: 20px 16px; }
     .doc-grid { grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 12px; }
+    .tabs-wrap {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .tabs-wrap::-webkit-scrollbar { display: none; }
+    .tabs {
+      flex-wrap: nowrap;
+      min-width: max-content;
+    }
   }
 
   .zoom-hint {
