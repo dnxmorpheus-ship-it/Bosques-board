@@ -748,6 +748,9 @@ export default function App() {
   }
 
   function handleDelete(id) {
+    const pw = window.prompt("Ingresa la contraseña de colaborador para eliminar este anuncio:");
+    if (pw === null) return;
+    if (pw !== UPLOAD_PASSWORD) { window.alert("Contraseña incorrecta."); return; }
     deleteDoc(doc(db, "posts", id)).catch(() => {});
   }
 
