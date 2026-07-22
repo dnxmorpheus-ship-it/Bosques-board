@@ -33,6 +33,7 @@ const CATEGORIES = [
   "Conferencias",
   "Acomodadores y Micrófonos",
   "Vida y Ministerio",
+  "Predicación",
   "Limpieza",
   "Anuncios Generales",
 ];
